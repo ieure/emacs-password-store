@@ -4,8 +4,8 @@
 
 ;; Author: Svend Sorensen <svend@ciffer.net>
 ;; Version: 0.1
-;; Keywords: pass
 ;; Package-Requires: ((f "0.11.0") (s "1.9.0") (emacs "25"))
+;; Keywords: convenience, processes, tools
 
 ;; This file is not part of GNU Emacs.
 
@@ -100,8 +100,8 @@
   (unless subdir (setq subdir ""))
   (let ((dir (f-join (password-store-dir) subdir)))
     (if (f-directory? dir)
-	(mapcar 'password-store--file-to-entry
-		(f-files dir (lambda (file) (equal (f-ext file) "gpg")) t)))))
+        (mapcar 'password-store--file-to-entry
+                (f-files dir (lambda (file) (equal (f-ext file) "gpg")) t)))))
 
 ;;;###autoload
 (defun password-store-get (entry)
@@ -126,9 +126,9 @@ Calls CALLBACK with one argument, the first line of the password data."
   (interactive)
   (if password-store-kill-ring-pointer
       (progn
-	(setcar password-store-kill-ring-pointer "")
-	(setq password-store-kill-ring-pointer nil)
-	(message "Password cleared."))))
+        (setcar password-store-kill-ring-pointer "")
+        (setq password-store-kill-ring-pointer nil)
+        (message "Password cleared."))))
 
 ;;;###autoload
 (defun password-store-copy (entry)
@@ -156,8 +156,10 @@ avoid sending a password to the browser."
   (interactive (list (completing-read "Password entry: " (password-store-list))))
   (let ((url (password-store-get entry)))
     (if (or (string-prefix-p "http://" url)
-	    (string-prefix-p "https://" url))
-	(browse-url url)
+            (string-prefix-p "https://" url))
+        (browse-url url)
       (error "%s" "String does not look like a URL"))))
+
+(provide 'password-store)
 
 ;;; password-store.el ends here

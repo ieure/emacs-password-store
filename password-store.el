@@ -1,11 +1,11 @@
-;;; password-store.el --- Password store (pass) support
+;;; password-store.el --- Password store (pass) support -*- lexical-binding: t; -*-
 
 ;; Copyright (C) 2014 Svend Sorensen <svend@ciffer.net>
 
 ;; Author: Svend Sorensen <svend@ciffer.net>
 ;; Version: 0.1
-;; Package-Requires: ((f "0.11.0") (s "1.9.0"))
 ;; Keywords: pass
+;; Package-Requires: ((f "0.11.0") (s "1.9.0") (emacs "25"))
 
 ;; This file is not part of GNU Emacs.
 
@@ -50,17 +50,50 @@
   "Return entry name corresponding to FILE."
   (f-no-ext (f-relative file (password-store-dir))))
 
+(defun password-store--decrypt-file-command (file)
+  "Return the shell command to decrypt FILE."
+  (format "gpg -d --quiet --yes --batch %s 2>/dev/null" file))
+
 (defun password-store--decrypt-file (file)
   "Return unencrypted content of FILE."
   (if (f-file? file)
-      (shell-command-to-string
-       (format "gpg -d --quiet --yes --batch %s 2>/dev/null" file))
+      (shell-command-to-string (password-store--decrypt-file-command file))
     (error "File %s does not exist" file)))
+
+(defun password-store--decrypt-file-async (file callback)
+  "Return unencrypted content of FILE."
+  (if (f-file? file)
+      (password-store-shell-command-to-string-async
+       (password-store--decrypt-file-command file)
+       callback)
+    (error "File %s does not exist" file)))
+
+(defun password-store-shell-command-to-string-async (command callback)
+  "Execute shell command COMMAND and call CALLBACK with its output as a string."
+  (let ((output ""))
+    (make-process :name "password-store-gpg"
+                  :command (list shell-file-name shell-command-switch command)
+                  :connection-type 'pipe
+                  :noquery t
+                  :filter (lambda (process text)
+                            (setq output (concat output text)))
+                  :sentinel (lambda (process state)
+                              (cond
+                               ((string= state "finished\n")
+                                (funcall callback output))
+                               ((string= state "open\n") (accept-process-output process))
+                               (t (error (concat "password-store: " state))))))))
 
 (defun password-store--decrypt-entry (entry)
   "Return decrypted content for ENTRY."
   (password-store--decrypt-file
    (password-store--entry-to-file entry)))
+
+(defun password-store--decrypt-entry-async (entry callback)
+  "Call CALLBACK with decrypted content for ENTRY."
+  (password-store--decrypt-file-async
+   (password-store--entry-to-file entry)
+   callback))
 
 (defun password-store-list (&optional subdir)
   "List password entries under SUBDIR."
@@ -76,6 +109,16 @@
 
 Returns the first line of the password data."
   (car (s-lines (password-store--decrypt-entry entry))))
+
+;;;###autoload
+(defun password-store-get-async (entry callback)
+  "Return password for ENTRY.
+
+Calls CALLBACK with one argument, the first line of the password data."
+  (password-store--decrypt-entry-async
+   entry
+   (lambda (string)
+     (funcall callback (car (s-lines string))))))
 
 ;;;###autoload
 (defun password-store-clear ()
@@ -95,12 +138,14 @@ Clear previous password from kill ring.  Pointer to kill ring is
 stored in `password-store-kill-ring-pointer'.  Password is cleared
 after 45 seconds."
   (interactive (list (completing-read "Password entry: " (password-store-list))))
-  (let ((password (password-store-get entry)))
-    (password-store-clear)
-    (kill-new password)
-    (setq password-store-kill-ring-pointer kill-ring-yank-pointer)
-    (message "Copied %s to the kill ring. Will clear in 45 seconds." entry)
-    (run-at-time "45 sec" nil 'password-store-clear)))
+  (password-store-get-async
+   entry
+   (lambda (password)
+     (password-store-clear)
+     (kill-new password)
+     (setq password-store-kill-ring-pointer kill-ring-yank-pointer)
+     (message "Copied %s to the kill ring. Will clear in 45 seconds." entry)
+     (run-at-time "45 sec" nil 'password-store-clear))))
 
 ;;;###autoload
 (defun password-store-url (entry)
